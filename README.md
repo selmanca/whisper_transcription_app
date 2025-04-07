@@ -17,3 +17,6 @@ This project deploys a fine-tuned Whisper transcription service as a FastAPI app
 2. Install dependencies:
    ```bash
    pip install -r requirements.txt
+3. Run the app
+   ```bash
+   uvicorn app:online_transcriber --host 0.0.0.0 --port 3000 --reload
