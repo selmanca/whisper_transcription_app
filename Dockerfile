@@ -1,6 +1,6 @@
 FROM python:3.10-slim
 
-WORKDIR /app
+WORKDIR /online_transcriber
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y ffmpeg git
@@ -15,4 +15,4 @@ COPY . .
 EXPOSE 3000
 
 # Run the FastAPI app
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "3000"]
+CMD ["uvicorn", "app:online_transcriber", "--host", "0.0.0.0", "--port", "3000"]
