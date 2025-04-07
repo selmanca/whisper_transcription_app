@@ -1,0 +1,9 @@
+transformers
+torch
+torchaudio
+pydub
+ffmpeg-python
+python-docx
+accelerate
+fastapi
+uvicorn
