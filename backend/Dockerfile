@@ -10,11 +10,11 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Install Python dependencies
-COPY requirements.txt .
+COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the backend code
-COPY rp_handler.py . 
+# Copy backend code
+COPY backend/rp_handler.py .
 
 # (If there were additional src files or model files, they would be copied here)
 
