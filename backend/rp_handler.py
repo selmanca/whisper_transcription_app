@@ -6,6 +6,7 @@ from transformers import pipeline
 from docx import Document
 
 model_name = os.getenv("WHISPER_MODEL_NAME")
+print(f"Using Whisper model: {model_name}")
 
 # Load Whisper pipeline globally at startup
 whisper_pipeline = pipeline(
