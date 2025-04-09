@@ -5,10 +5,12 @@ import runpod
 from transformers import pipeline
 from docx import Document
 
+model_name = os.getenv("WHISPER_MODEL_NAME")
+
 # Load Whisper pipeline globally at startup
 whisper_pipeline = pipeline(
     "automatic-speech-recognition",
-    model="sarumanca/whisper-finetuned"
+    model=model_name
 )
 
 # Helper function: convert audio to Whisper-compatible format (16kHz, mono WAV)
