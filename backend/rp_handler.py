@@ -11,7 +11,9 @@ print(f"Using Whisper model: {model_name}")
 # Load Whisper pipeline globally at startup
 whisper_pipeline = pipeline(
     "automatic-speech-recognition",
-    model=model_name
+    model=model_name,
+    chunk_length_s=30,                 # Enables chunking for long audio
+    generate_kwargs={"task": "transcribe"}
 )
 
 # Helper function: convert audio to Whisper-compatible format (16kHz, mono WAV)
