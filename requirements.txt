@@ -1,9 +1,4 @@
-transformers
-torch
-torchaudio
-pydub
-ffmpeg-python
-python-docx
-accelerate
-fastapi
-uvicorn
+runpod       # RunPod SDK for serverless endpoints
+transformers  # Hugging Face Transformers for Whisper pipeline
+torch        # PyTorch (required by Transformers for the model)
+python-docx  # To generate Word (.docx) files
