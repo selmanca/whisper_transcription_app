@@ -15,9 +15,19 @@ whisper_pipeline = pipeline(
 def convert_audio_to_wav(input_path, output_path):
     command = [
         "ffmpeg", "-y", "-i", input_path,
-        "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", output_path
+        "-vn",                 # Disable video processing (if video data exists)
+        "-acodec", "pcm_s16le",# Ensure PCM codec
+        "-ar", "16000",        # Sample rate (16kHz)
+        "-ac", "1",            # Mono audio
+        "-f", "wav",           # Force WAV format
+        output_path
     ]
-    subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+    try:
+        subprocess.run(command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except subprocess.CalledProcessError as e:
+        # Capture FFmpeg error details for easier debugging
+        raise RuntimeError(f"FFmpeg conversion failed: {e.stderr.decode('utf-8')}")
+
 
 # RunPod handler function
 def handler(event):
@@ -48,9 +58,9 @@ def handler(event):
     # Convert audio to required format
     try:
         convert_audio_to_wav(original_audio, processed_audio)
-    except subprocess.CalledProcessError as e:
-        return {"error": f"Audio conversion failed: {e}"}
-
+    except Exception as e:
+        return {"error": f"Audio conversion failed: {str(e)}"}
+      
     # Transcribe audio
     try:
         result = whisper_pipeline(processed_audio)
