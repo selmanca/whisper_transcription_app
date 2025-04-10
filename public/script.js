@@ -19,15 +19,22 @@ function createFileEntry(filename) {
   return entry;
 }
 
-function updateStatus(entryElem, text) {
+function updateStatus(entryElem, text, showSpinner = false) {
   const statusElem = entryElem.querySelector('.status');
-  if (statusElem) statusElem.textContent = " - " + text;
+  if (statusElem) {
+    statusElem.innerHTML = ` - ${text}`;
+    if (showSpinner) {
+      const spinner = document.createElement('span');
+      spinner.className = 'spinner';
+      statusElem.appendChild(spinner);
+    }
+  }
 }
 
 async function handleFiles(files) {
   for (const file of files) {
     const entry = createFileEntry(file.name);
-    updateStatus(entry, "Uploading...");
+    updateStatus(entry, "Uploading...", true);
 
     const base64Data = await new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -50,7 +57,7 @@ async function handleFiles(files) {
       if (!response.ok) throw new Error(`Upload failed: ${response.status}`);
       const result = await response.json();
       const jobId = result.id;
-      updateStatus(entry, "Processing...");
+      updateStatus(entry, "Processing...", true);
 
       let statusResponse, statusData;
       const pollInterval = 2000;
@@ -82,6 +89,7 @@ async function handleFiles(files) {
       console.error(err);
       updateStatus(entry, "Failed");
     }
+    await new Promise(r => setTimeout(r, 100));
   }
 }
 
