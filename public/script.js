@@ -1,4 +1,8 @@
-const API_BASE = window.location.origin;  // backend's port
+// if we’re on GitHub Pages, use your Render URL;
+// otherwise (local‐dev or if you ever host front+back together) use the page’s origin
+const API_BASE = window.location.hostname.endsWith('github.io')
+  ? 'https://whisper-transcription-app.onrender.com'
+  : window.location.origin;
 
 const RUN_URL = `${API_BASE}/transcribe`;
 const STATUS_URL = `${API_BASE}/status/`;
