@@ -5,26 +5,197 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Whisper Transcription</title>
   <style>
-    body { font-family: Arial, sans-serif; max-width: 600px; margin: 2em auto; }
-    h1 { text-align: center; }
-    #upload-section { border: 2px dashed #ccc; padding: 2em; text-align: center; }
-    #upload-section.dragover { background-color: #f0f8ff; }
-    #file-input { display: none; }
-    #file-label { display: inline-block; padding: 0.5em 1em; background: #007bff; color: #fff;
-                 cursor: pointer; border-radius: 5px; }
-    #output { margin-top: 2em; }
-    .file-entry { border-bottom: 1px solid #eee; padding: 0.5em 0; }
-    .file-name { font-weight: bold; }
-    .status { margin-left: 10px; font-style: italic; }
-    .download-link { margin-left: 10px; }
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      margin: 0;
+      padding: 2em 1em;
+      background: url('https://www.transparenttextures.com/patterns/cubes.png');
+      background-color: #f0f2f5;
+      color: #333;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    h1 {
+      margin: 0.5em 0 1em;
+      font-size: 2rem;
+      text-align: center;
+    }
+
+    .icon {
+      width: 60px;
+      height: 60px;
+      margin-bottom: 0.5em;
+    }
+
+    #upload-section {
+      border: 2px dashed #aaa;
+      border-radius: 16px;
+      background-color: white;
+      width: 100%;
+      max-width: 600px;
+      padding: 2em;
+      text-align: center;
+      transition: background-color 0.3s ease;
+      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+      position: relative;
+    }
+
+    #upload-section.dragover {
+      background-color: #e9f7ff;
+    }
+
+    .drag-icon {
+      font-size: 3rem;
+      color: #007bff;
+      margin-bottom: 0.5em;
+    }
+
+    #file-input {
+      display: none;
+    }
+
+    #file-label {
+      display: inline-block;
+      margin-top: 1em;
+      padding: 0.7em 1.5em;
+      font-size: 1rem;
+      color: white;
+      background-color: #007bff;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background-color 0.2s ease;
+    }
+
+    #file-label:hover {
+      background-color: #0056b3;
+    }
+
+    #output {
+      margin-top: 2em;
+      width: 100%;
+      max-width: 600px;
+    }
+
+    .file-entry {
+      background-color: #fff;
+      border-left: 4px solid #007bff;
+      border-radius: 8px;
+      padding: 1em;
+      margin-bottom: 1em;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.95rem;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+    }
+
+    .file-info {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .file-name {
+      font-weight: bold;
+    }
+
+    .status {
+      margin-top: 0.3em;
+      font-style: italic;
+      color: #666;
+    }
+
+    .download-link {
+      display: inline-flex;
+      align-items: center;
+      background-color: #28a745;
+      color: white;
+      padding: 0.4em 0.8em;
+      border-radius: 6px;
+      text-decoration: none;
+      font-size: 0.85rem;
+      transition: background-color 0.2s ease;
+    }
+
+    .download-link:hover {
+      background-color: #218838;
+    }
+
+    .download-icon {
+      margin-right: 0.4em;
+      width: 16px;
+      height: 16px;
+    }
+
+    @media (max-width: 600px) {
+      h1 {
+        font-size: 1.5rem;
+      }
+
+      #upload-section {
+        padding: 1.5em;
+      }
+
+      .file-entry {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .download-link {
+        margin-top: 0.5em;
+      }
+      /* Spinner animation */
+      .spinner {
+        width: 18px;
+        height: 18px;
+        border: 3px solid #ccc;
+        border-top: 3px solid #007bff;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        display: inline-block;
+        vertical-align: middle;
+        margin-left: 8px;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      /* Upload animation */
+      .file-entry {
+        opacity: 0;
+        transform: translateY(10px);
+        animation: fadeInUp 0.4s ease-out forwards;
+      }
+
+      @keyframes fadeInUp {
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+       }
+
+    }
   </style>
 </head>
 <body>
-  <h1>Whisper Audio Transcription</h1>
+  <img src="https://cdn-icons-png.flaticon.com/512/727/727245.png" alt="Microphone icon" class="icon" />
+  <h1>Radyoloji Sesten Yazıya Çevirme Modülü</h1>
+
   <div id="upload-section">
-    <p>Drag & drop audio files here, or <label id="file-label" for="file-input">browse</label> to select files.</p>
+    <div class="drag-icon">🎤</div>
+    <p>Ses dosyalarını taşıyın</p>
+    <p>veya <label id="file-label" for="file-input">bilgisayardan</label> yükleyin</p>
     <input id="file-input" type="file" accept=".mp3,.m4a,.wav" multiple />
   </div>
+
   <div id="output"></div>
 
   <script src="script.js"></script>
