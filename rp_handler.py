@@ -3,9 +3,7 @@ import base64
 import subprocess
 import runpod
 import torch
-import wave
-import webrtcvad
-import contextlib
+import librosa
 import soundfile as sf
 from transformers import WhisperProcessor, WhisperForConditionalGeneration
 from docx import Document
@@ -16,125 +14,96 @@ print(f"Using Whisper model: {model_name}")
 
 # Load model and processor
 processor = WhisperProcessor.from_pretrained(model_name)
-device = "cuda" if torch.cuda.is_available() else "cpu"
-model = WhisperForConditionalGeneration.from_pretrained(model_name).to(device)
+model = WhisperForConditionalGeneration.from_pretrained(model_name).to("cuda" if torch.cuda.is_available() else "cpu")
 
+# Helper function: convert any audio to 16kHz mono WAV
 def convert_audio_to_wav(input_path, output_path):
     command = [
         "ffmpeg", "-y", "-i", input_path,
         "-vn", "-acodec", "pcm_s16le",
         "-ar", "16000", "-ac", "1", "-f", "wav", output_path
     ]
-    subprocess.run(command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    try:
+        subprocess.run(command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"FFmpeg conversion failed: {e.stderr.decode('utf-8')}")
 
-def read_wave(path):
-    """Reads a WAV file and returns (PCM_bytes, sample_rate)."""
-    with contextlib.closing(wave.open(path, 'rb')) as wf:
-        sr = wf.getframerate()
-        assert wf.getnchannels() == 1
-        assert wf.getsampwidth() == 2
-        pcm = wf.readframes(wf.getnframes())
-    return pcm, sr
+# Chunking function with overlap
+def chunk_audio(audio_path, chunk_length=30, overlap=3):
+    waveform, sr = librosa.load(audio_path, sr=16000)
+    chunk_samples = int(chunk_length * sr)
+    overlap_samples = int(overlap * sr)
+    total_samples = len(waveform)
 
-def write_wave(path, pcm_bytes, sample_rate):
-    """Writes PCM bytes to a WAV file."""
-    with contextlib.closing(wave.open(path, 'wb')) as wf:
-        wf.setnchannels(1)
-        wf.setsampwidth(2)
-        wf.setframerate(sample_rate)
-        wf.writeframes(pcm_bytes)
+    chunks = []
+    start = 0
+    while start < total_samples:
+        end = min(start + chunk_samples, total_samples)
+        chunk = waveform[start:end]
+        chunk_path = f"/tmp/chunk_{start}.wav"
+        sf.write(chunk_path, chunk, sr)
+        chunks.append(chunk_path)
+        start += chunk_samples - overlap_samples
 
-def vad_segment_generator(wav_path, aggressiveness=3, frame_ms=30, padding_ms=300):
-    pcm, sr = read_wave(wav_path)
-    vad = webrtcvad.Vad(aggressiveness)
-    bytes_per_frame = int(sr * (frame_ms / 1000.0) * 2)
+    return chunks
 
-    full_length = len(pcm)
-    frames = []
-    i = 0
-    while i < full_length:
-        chunk = pcm[i : i + bytes_per_frame]
-        if len(chunk) < bytes_per_frame:
-            # Pad with zeros to make it exactly bytes_per_frame long
-            chunk += b"\x00" * (bytes_per_frame - len(chunk))
-        frames.append(chunk)
-        i += bytes_per_frame
-
-    is_speech = [vad.is_speech(f, sr) for f in frames]
-
-    # Build speech segments with padding
-    pad_frames = int(padding_ms / frame_ms)
-    segments = []
-    start = None
-    for i, speech in enumerate(is_speech):
-        if speech and start is None:
-            start = max(0, i - pad_frames)
-        elif not speech and start is not None:
-            end = min(len(frames), i + pad_frames)
-            segments.append((start * bytes_per_frame, end * bytes_per_frame))
-            start = None
-    # Handle if file ends while still in speech
-    if start is not None:
-        segments.append((start * bytes_per_frame, len(pcm)))
-
-    return segments, sr
-
+# RunPod handler function
 def handler(event):
     job_input = event.get("input", {}) or {}
     audio_b64 = job_input.get("audio_base64")
     audio_path = job_input.get("audio")
+
     if not (audio_b64 or audio_path):
         return {"error": "No audio input provided."}
 
     os.makedirs("/tmp", exist_ok=True)
-    orig = "/tmp/input_orig"
-    wav16 = "/tmp/input_16k.wav"
+    original_audio = "/tmp/input_audio_original"
+    processed_audio = "/tmp/input_audio_processed.wav"
 
-    # Decode or copy
+    # Decode base64
     if audio_b64:
-        data = audio_b64.split(",",1)[1] if audio_b64.startswith("data:") else audio_b64
-        with open(orig, "wb") as f:
-            f.write(base64.b64decode(data))
-    else:
-        orig = audio_path
+        try:
+            if audio_b64.startswith("data:"):
+                audio_b64 = audio_b64.split(",", 1)[1]
+            with open(original_audio, "wb") as f:
+                f.write(base64.b64decode(audio_b64))
+        except Exception as e:
+            return {"error": f"Invalid base64 audio data: {e}"}
+    elif audio_path:
+        original_audio = audio_path
 
     try:
-        convert_audio_to_wav(orig, wav16)
+        convert_audio_to_wav(original_audio, processed_audio)
     except Exception as e:
-        return {"error": f"Conversion failed: {e}"}
+        return {"error": f"Audio conversion failed: {str(e)}"}
 
-    # VAD-based segmentation
-    segments, sr = vad_segment_generator(wav16, aggressiveness=3, frame_ms=30, padding_ms=300)
-    if not segments:
-        # fallback to single segment
-        segments = [(0, None)]
+    try:
+        chunk_paths = chunk_audio(processed_audio)
+        final_text = ""
 
-    transcriptions = []
-    for idx, (start_b, end_b) in enumerate(segments):
-        pcm, _ = read_wave(wav16)
-        seg_pcm = pcm[start_b:end_b] if end_b else pcm[start_b:]
-        seg_path = f"/tmp/segment_{idx}.wav"
-        write_wave(seg_path, seg_pcm, sr)
+        for chunk_path in chunk_paths:
+            input_features = processor(
+                librosa.load(chunk_path, sr=16000)[0],
+                sampling_rate=16000,
+                return_tensors="pt"
+            ).input_features.to(model.device)
 
-        # load and transcribe
-        waveform, _ = sf.read(seg_path, dtype='int16')
-        input_feats = processor(waveform, sampling_rate=sr, return_tensors="pt").input_features.to(device)
-        pred_ids = model.generate(input_feats)
-        txt = processor.batch_decode(pred_ids, skip_special_tokens=True)[0].strip()
-        transcriptions.append(txt)
+            predicted_ids = model.generate(input_features)
+            transcription = processor.batch_decode(predicted_ids, skip_special_tokens=True)[0]
+            final_text += transcription.strip() + "\n"
 
-    # simple join with newline; you can apply merge logic if needed
-    final_text = "\n".join(transcriptions)
+    except Exception as e:
+        return {"error": f"Transcription failed: {str(e)}"}
 
-    # save to docx
     doc = Document()
-    doc.add_paragraph(final_text)
-    out = "/tmp/transcription.docx"
-    doc.save(out)
-    with open(out,"rb") as f:
-        b64 = base64.b64encode(f.read()).decode()
+    doc.add_paragraph(final_text.strip())
+    output_path = "/tmp/transcription.docx"
+    doc.save(output_path)
 
-    return {"result": b64}
+    with open(output_path, "rb") as f:
+        docx_b64 = base64.b64encode(f.read()).decode('utf-8')
+
+    return {"result": docx_b64}
 
 if __name__ == "__main__":
     runpod.serverless.start({"handler": handler})
