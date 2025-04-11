@@ -13,7 +13,10 @@
       font-family: 'Segoe UI', sans-serif;
       margin: 0;
       padding: 2em 1em;
-      background: url('https://www.transparenttextures.com/patterns/cubes.png');
+      background: url('images/pattern.png');
+      background-repeat: repeat;
+      background-size: auto; /* Avoid stretch */
+      background-position: center;
       background-color: #f0f2f5;
       color: #333;
       display: flex;
@@ -28,9 +31,9 @@
     }
 
     .icon {
-      width: 60px;
-      height: 60px;
-      margin-bottom: 0.5em;
+      width: 150px;
+      height: auto;
+      margin-bottom: 0.8em;
     }
 
     #upload-section {
@@ -131,8 +134,9 @@
       width: 16px;
       height: 16px;
     }
-    /* Spinner animation */
-      .spinner {
+	
+	/* Spinner animation */
+    .spinner {
         width: 18px;
         height: 18px;
         border: 3px solid #ccc;
@@ -144,20 +148,20 @@
         margin-left: 8px;
       }
 
-      @keyframes spin {
+    @keyframes spin {
         to {
           transform: rotate(360deg);
         }
       }
 
-      /* Upload animation */
-      .file-entry {
+    /* Upload animation */
+    .file-entry {
         opacity: 0;
         transform: translateY(10px);
         animation: fadeInUp 0.4s ease-out forwards;
       }
 
-      @keyframes fadeInUp {
+    @keyframes fadeInUp {
         to {
           opacity: 1;
           transform: translateY(0);
@@ -181,19 +185,19 @@
       .download-link {
         margin-top: 0.5em;
       }
-      
+
     }
   </style>
 </head>
 <body>
-  <img src="https://cdn-icons-png.flaticon.com/512/727/727245.png" alt="Microphone icon" class="icon" />
+  <img src="images/mic.png" alt="Microphone icon" class="icon" />
   <h1>Radyoloji Sesten Yazıya Çevirme Modülü</h1>
 
   <div id="upload-section">
     <div class="drag-icon">🎤</div>
     <p>Ses dosyalarını taşıyın</p>
     <p>veya <label id="file-label" for="file-input">bilgisayardan</label> yükleyin</p>
-    <input id="file-input" type="file" accept=".mp3,.m4a,.wav" multiple />
+    <input id="file-input" type="file" accept=".mp3,.m4a,.wav,.ogg,.DS2" multiple />
   </div>
 
   <div id="output"></div>
