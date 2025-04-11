@@ -1,22 +1,23 @@
+# Dockerfile
 # Start from an official Python slim image
 FROM python:3.10-slim
 
-# Install system dependencies: ffmpeg for audio decoding, git (if needed for transformers), and others
+# Install system dependencies: ffmpeg for audio decoding, libsndfile1 for pysoundfile, and git if you ever pull models directly
 RUN apt-get update && apt-get install -y \
-    ffmpeg libsndfile1 git \
+    ffmpeg \
+    libsndfile1 \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 # Set work directory
 WORKDIR /app
 
-# Install Python dependencies
+# Copy and install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy backend code
+# Copy your RunPod handler code
 COPY rp_handler.py .
 
-# (If there were additional src files or model files, they would be copied here)
-
-# Command to start the RunPod handler (this will run the serverless loop)
+# Command to start the RunPod handler
 CMD ["python", "rp_handler.py"]
