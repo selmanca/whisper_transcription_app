@@ -7,17 +7,18 @@ RUN apt-get update && apt-get install -y \
     ffmpeg \
     libsndfile1 \
     git \
+    build-essential \
+    python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Set work directory
 WORKDIR /app
 
 # Copy and install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy your RunPod handler code
+# Copy your handler code
 COPY rp_handler.py .
 
-# Command to start the RunPod handler
+# Start the RunPod handler
 CMD ["python", "rp_handler.py"]
