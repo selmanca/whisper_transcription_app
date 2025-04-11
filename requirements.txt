@@ -4,4 +4,3 @@ torch        # PyTorch (required by Transformers for the model)
 python-docx  # To generate Word (.docx) files
 soundfile
 webrtcvad
-contextlib
