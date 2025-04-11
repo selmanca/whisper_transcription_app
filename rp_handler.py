@@ -2,57 +2,70 @@ import os
 import base64
 import subprocess
 import runpod
-from docx import Document
-from transformers import pipeline, WhisperForConditionalGeneration, WhisperProcessor
 import torch
-import re
+import librosa
+import soundfile as sf
+from transformers import WhisperProcessor, WhisperForConditionalGeneration
+from docx import Document
 
-# Load environment variable for model
+# Load environment variable for model name
 model_name = os.getenv("WHISPER_MODEL_NAME")
 print(f"Using Whisper model: {model_name}")
 
-# Detect device
-device = "cuda" if torch.cuda.is_available() else "cpu"
-
-# Load processor and model
+# Load model and processor
 processor = WhisperProcessor.from_pretrained(model_name)
+device = "cuda" if torch.cuda.is_available() else "cpu"
 model = WhisperForConditionalGeneration.from_pretrained(model_name).to(device)
 
-# Load Whisper pipeline with better decoding parameters
-whisper_pipeline = pipeline(
-    task="automatic-speech-recognition",
-    model=model,
-    tokenizer=processor.tokenizer,
-    feature_extractor=processor.feature_extractor,
-    chunk_length_s=30,
-    stride_length_s=5,
-    generate_kwargs={
-        "task": "transcribe",
-        "temperature": 0.3,
-        "num_beams": 5,
-        "length_penalty": 1.0,
-        "repetition_penalty": 2.0,
-        "return_timestamps": False
-    },
-    device=0 if device == "cuda" else -1
-)
-
-# Optional cleanup function to reduce repeating phrases
-def clean_repetitions(text):
-    return re.sub(r'(\b\w+(?:\s+\w+){0,3})\s+(?:\1\s+){2,}', r'\1 ', text)
-
-# Convert any audio file to 16kHz mono WAV
+# Helper function: convert any audio to 16kHz mono WAV
 def convert_audio_to_wav(input_path, output_path):
     command = [
         "ffmpeg", "-y", "-i", input_path,
         "-vn", "-acodec", "pcm_s16le",
-        "-ar", "16000", "-ac", "1", "-f", "wav",
-        output_path
+        "-ar", "16000", "-ac", "1", "-f", "wav", output_path
     ]
     try:
         subprocess.run(command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"FFmpeg conversion failed: {e.stderr.decode('utf-8')}")
+
+# Chunking function with overlap
+def chunk_audio(audio_path, chunk_length=30, overlap=5):
+    waveform, sr = librosa.load(audio_path, sr=16000)
+    chunk_samples = int(chunk_length * sr)
+    overlap_samples = int(overlap * sr)
+    total_samples = len(waveform)
+
+    chunks = []
+    start = 0
+    while start < total_samples:
+        end = min(start + chunk_samples, total_samples)
+        chunk = waveform[start:end]
+        chunk_path = f"/tmp/chunk_{start}.wav"
+        sf.write(chunk_path, chunk, sr)
+        chunks.append(chunk_path)
+        start += chunk_samples - overlap_samples
+
+    return chunks
+
+# Function to merge overlapping transcriptions and remove repetitions
+def merge_transcriptions(transcriptions, overlap_words=20):
+    if not transcriptions:
+        return ""
+    merged = transcriptions[0].strip()
+    for next_text in transcriptions[1:]:
+        next_text = next_text.strip()
+        prev_words = merged.split()
+        next_words = next_text.split()
+
+        max_overlap = 0
+        for i in range(min(overlap_words, len(prev_words), len(next_words)), 0, -1):
+            if prev_words[-i:] == next_words[:i]:
+                max_overlap = i
+                break
+
+        merged += " " + " ".join(next_words[max_overlap:])
+    return merged
 
 # RunPod handler function
 def handler(event):
@@ -71,9 +84,8 @@ def handler(event):
         try:
             if audio_b64.startswith("data:"):
                 audio_b64 = audio_b64.split(",", 1)[1]
-            audio_bytes = base64.b64decode(audio_b64)
             with open(original_audio, "wb") as f:
-                f.write(audio_bytes)
+                f.write(base64.b64decode(audio_b64))
         except Exception as e:
             return {"error": f"Invalid base64 audio data: {e}"}
     elif audio_path:
@@ -85,19 +97,36 @@ def handler(event):
         return {"error": f"Audio conversion failed: {str(e)}"}
 
     try:
-        result = whisper_pipeline(processed_audio)
-        raw_text = result["text"] if isinstance(result, dict) else result[0].get("text", "")
-        text = clean_repetitions(raw_text)
-    except Exception as e:
-        return {"error": f"Transcription failed: {e}"}
+        # Split the audio into chunks
+        chunk_paths = chunk_audio(processed_audio, chunk_length=30, overlap=5)
+        transcriptions = []
 
+        for chunk_path in chunk_paths:
+            waveform, _ = librosa.load(chunk_path, sr=16000)
+            input_features = processor(
+                waveform,
+                sampling_rate=16000,
+                return_tensors="pt"
+            ).input_features.to(model.device)
+
+            predicted_ids = model.generate(input_features)
+            transcription = processor.batch_decode(predicted_ids, skip_special_tokens=True)[0]
+            transcriptions.append(transcription.strip())
+
+        # Merge transcriptions intelligently to remove repeated overlap.
+        final_text = merge_transcriptions(transcriptions, overlap_words=20)
+
+    except Exception as e:
+        return {"error": f"Transcription failed: {str(e)}"}
+
+    # Save the final transcription to a DOCX file
     doc = Document()
-    doc.add_paragraph(text)
+    doc.add_paragraph(final_text.strip())
     output_path = "/tmp/transcription.docx"
     doc.save(output_path)
 
     with open(output_path, "rb") as f:
-        docx_b64 = base64.b64encode(f.read()).decode('utf-8')
+        docx_b64 = base64.b64encode(f.read()).decode("utf-8")
 
     return {"result": docx_b64}
 
