@@ -45,16 +45,21 @@ def write_wave(path, pcm_bytes, sample_rate):
         wf.writeframes(pcm_bytes)
 
 def vad_segment_generator(wav_path, aggressiveness=3, frame_ms=30, padding_ms=300):
-    """
-    Yields (start_byte, end_byte) tuples for speech segments in the WAV file.
-    Uses WebRTC VAD with a padding window to smooth boundaries.
-    """
     pcm, sr = read_wave(wav_path)
     vad = webrtcvad.Vad(aggressiveness)
-    bytes_per_frame = int(sr * (frame_ms / 1000.0) * 2)  # 2 bytes/sample
+    bytes_per_frame = int(sr * (frame_ms / 1000.0) * 2)
 
-    # Split into frames
-    frames = [pcm[i:i+bytes_per_frame] for i in range(0, len(pcm), bytes_per_frame)]
+    full_length = len(pcm)
+    frames = []
+    i = 0
+    while i < full_length:
+        chunk = pcm[i : i + bytes_per_frame]
+        if len(chunk) < bytes_per_frame:
+            # Pad with zeros to make it exactly bytes_per_frame long
+            chunk += b"\x00" * (bytes_per_frame - len(chunk))
+        frames.append(chunk)
+        i += bytes_per_frame
+
     is_speech = [vad.is_speech(f, sr) for f in frames]
 
     # Build speech segments with padding
