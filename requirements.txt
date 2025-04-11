@@ -3,6 +3,5 @@ transformers  # Hugging Face Transformers for Whisper pipeline
 torch        # PyTorch (required by Transformers for the model)
 python-docx  # To generate Word (.docx) files
 soundfile
-wave
 webrtcvad
 contextlib
