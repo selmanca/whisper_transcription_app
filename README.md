@@ -12,5 +12,3 @@ This project is a serverless audio transcription API built for [RunPod](https://
 - Transcribes using a fine-tuned Whisper model
 - Returns transcription as a Word `.docx` document (base64 encoded)
 
----
-Page: https://selmanca.github.io/whisper_transcription_app/frontend/index.html
