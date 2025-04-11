@@ -1,6 +1,7 @@
-runpod       # RunPod SDK for serverless endpoints
-transformers  # Hugging Face Transformers for Whisper pipeline
-torch        # PyTorch (required by Transformers for the model)
-python-docx  # To generate Word (.docx) files
-soundfile
-librosa
+runpod             # RunPod SDK for serverless endpoints
+transformers       # Hugging Face Transformers (for Whisper)
+torch              # PyTorch backend for the model
+python-docx        # To generate Word (.docx) files
+soundfile          # Python bindings for libsndfile
+librosa            # Audio loading and processing
+webrtcvad          # Voice Activity Detection for smarter chunking
