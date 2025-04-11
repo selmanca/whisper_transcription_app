@@ -1,27 +1,22 @@
 # Start from an official Python slim image
 FROM python:3.10-slim
 
-# Install necessary system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    python3-dev \
-    ffmpeg \
-    libsndfile1-dev \
-    git \
+# Install system dependencies: ffmpeg for audio decoding, git (if needed for transformers), and others
+RUN apt-get update && apt-get install -y \
+    ffmpeg libsndfile1 git \
     && rm -rf /var/lib/apt/lists/*
 
 # Set work directory
 WORKDIR /app
 
-# Copy requirements
+# Install Python dependencies
 COPY requirements.txt .
-
-# Upgrade pip/setuptools/wheel before installing
-RUN pip install --upgrade pip setuptools wheel
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy code
+# Copy backend code
 COPY rp_handler.py .
 
-# Start the RunPod handler
+# (If there were additional src files or model files, they would be copied here)
+
+# Command to start the RunPod handler (this will run the serverless loop)
 CMD ["python", "rp_handler.py"]
