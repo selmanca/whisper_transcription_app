@@ -21,14 +21,14 @@ const API_KEY = process.env.API_KEY;
 // 1) Security headers
 app.use(helmet());
 
-// 2) Rate‑limit ALL requests to 100 per 15min (adjust as you like)
-const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100,
+// 2) only count failed auth attempts
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,  // 15 minutes
+  max: 5,                   // allow up to 5 bad attempts
   standardHeaders: true,
-  legacyHeaders: false
+  legacyHeaders: false,
+  skipSuccessfulRequests: true  // do NOT count 2xx responses
 });
-app.use(globalLimiter);
 
 // 3) Basic‑Auth on EVERYTHING
 app.use(basicAuth({
