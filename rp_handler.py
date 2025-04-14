@@ -164,79 +164,115 @@ model = WhisperForConditionalGeneration.from_pretrained(model_name).to(device)
 def handler(event):
     """
     RunPod serverless handler that:
-      - accepts an audio file (or base64 encoded audio),
-      - converts it to a 16kHz mono WAV,
-      - splits it into speech-based chunks using VAD,
+      - accepts one or more audio files (base64 encoded or file paths),
+      - converts each to a 16kHz mono WAV,
+      - splits each into speech-based chunks using VAD,
       - transcribes each chunk with Whisper,
-      - merges the transcriptions, and
-      - returns a DOCX file (as base64) with the transcription.
+      - merges the chunk transcriptions per audio file, and
+      - merges all audio transcriptions into a single DOCX file (with line separators between them).
     """
     job_input = event.get("input", {}) or {}
+    
+    # Support both a single file or a list of files
     audio_b64 = job_input.get("audio_base64")
     audio_path = job_input.get("audio")
-
+    
+    if isinstance(audio_b64, str):
+        audio_b64 = [audio_b64]
+    elif audio_b64 is None:
+        audio_b64 = []
+    
+    if isinstance(audio_path, str):
+        audio_path = [audio_path]
+    elif audio_path is None:
+        audio_path = []
+    
     if not (audio_b64 or audio_path):
         return {"error": "No audio input provided."}
-
-    os.makedirs(tmpdir, exist_ok=True)
-    original_audio = os.path.join(tmpdir, "input_audio_original")
-    processed_audio = os.path.join(tmpdir, "input_audio_processed.wav")
-
-    # Decode the base64 audio if provided
-    if audio_b64:
+    
+    all_transcriptions = []
+    
+    # Process each audio file provided as base64.
+    for idx, audio_str in enumerate(audio_b64):
+        original_audio = os.path.join(tmpdir, f"input_audio_original_{idx}")
+        processed_audio = os.path.join(tmpdir, f"input_audio_processed_{idx}.wav")
         try:
-            if audio_b64.startswith("data:"):
-                audio_b64 = audio_b64.split(",", 1)[1]
+            # Remove data URL header if present
+            if audio_str.startswith("data:"):
+                audio_str = audio_str.split(",", 1)[1]
             with open(original_audio, "wb") as f:
-                f.write(base64.b64decode(audio_b64))
+                f.write(base64.b64decode(audio_str))
         except Exception as e:
-            return {"error": f"Invalid base64 audio data: {e}"}
-    elif audio_path:
-        original_audio = audio_path
-
-    # Convert audio to the required WAV format
-    try:
-        convert_audio_to_wav(original_audio, processed_audio)
-    except Exception as e:
-        return {"error": f"Audio conversion failed: {str(e)}"}
-
-    try:
-        # Use VAD-based chunking to segment the audio
-        chunk_paths = vad_chunks_to_flexible_chunks(processed_audio)
-        transcriptions = []
-        for i, chunk_path in enumerate(chunk_paths):
-            waveform, _ = librosa.load(chunk_path, sr=16000)
-            input_features = processor(
-                waveform,
-                sampling_rate=16000,
-                return_tensors="pt"
-            ).input_features.to(device)
-
-            predicted_ids = model.generate(input_features)
-            transcription = processor.batch_decode(predicted_ids, skip_special_tokens=True)[0]
-            # Optionally, log or print details:
-            # print(f"Transcription {i}: {transcription.strip()[:100]}...")
-            transcriptions.append(transcription.strip())
-
-        # Merge the transcriptions to remove duplicated overlapping words
-        final_text = merge_transcriptions(transcriptions)
-
-    except Exception as e:
-        return {"error": f"Transcription failed: {str(e)}"}
-
-    # Save the final transcription in a DOCX file
+            return {"error": f"Invalid base64 audio data for audio index {idx}: {e}"}
+        
+        try:
+            convert_audio_to_wav(original_audio, processed_audio)
+        except Exception as e:
+            return {"error": f"Audio conversion failed for audio index {idx}: {str(e)}"}
+        
+        try:
+            # Perform VAD-based chunking and transcription
+            chunk_paths = vad_chunks_to_flexible_chunks(processed_audio)
+            transcriptions = []
+            for i, chunk_path in enumerate(chunk_paths):
+                waveform, _ = librosa.load(chunk_path, sr=16000)
+                input_features = processor(
+                    waveform,
+                    sampling_rate=16000,
+                    return_tensors="pt"
+                ).input_features.to(device)
+                predicted_ids = model.generate(input_features)
+                transcription = processor.batch_decode(predicted_ids, skip_special_tokens=True)[0]
+                transcriptions.append(transcription.strip())
+            final_text = merge_transcriptions(transcriptions)
+            all_transcriptions.append(final_text)
+        except Exception as e:
+            return {"error": f"Transcription failed for audio index {idx}: {str(e)}"}
+    
+    # Process each audio file provided as a direct file path.
+    for idx, path in enumerate(audio_path):
+        processed_audio = os.path.join(tmpdir, f"input_audio_processed_path_{idx}.wav")
+        try:
+            convert_audio_to_wav(path, processed_audio)
+        except Exception as e:
+            return {"error": f"Audio conversion failed for audio file {path}: {str(e)}"}
+        
+        try:
+            # Perform VAD-based chunking and transcription
+            chunk_paths = vad_chunks_to_flexible_chunks(processed_audio)
+            transcriptions = []
+            for i, chunk_path in enumerate(chunk_paths):
+                waveform, _ = librosa.load(chunk_path, sr=16000)
+                input_features = processor(
+                    waveform,
+                    sampling_rate=16000,
+                    return_tensors="pt"
+                ).input_features.to(device)
+                predicted_ids = model.generate(input_features)
+                transcription = processor.batch_decode(predicted_ids, skip_special_tokens=True)[0]
+                transcriptions.append(transcription.strip())
+            final_text = merge_transcriptions(transcriptions)
+            all_transcriptions.append(final_text)
+        except Exception as e:
+            return {"error": f"Transcription failed for audio file {path}: {str(e)}"}
+    
+    # Merge all audio transcriptions into one document using a separator (here using two newlines and a dashed line)
+    separator = "\n\n"
+    combined_transcription = separator.join(all_transcriptions)
+    
+    # Save the combined transcription to a DOCX file
     doc = Document()
-    doc.add_paragraph(final_text.strip())
+    doc.add_paragraph(combined_transcription.strip())
     output_docx = os.path.join(tmpdir, "transcription.docx")
     doc.save(output_docx)
-
+    
     # Encode DOCX file as base64 for the response
     try:
         with open(output_docx, "rb") as f:
             docx_b64 = base64.b64encode(f.read()).decode('utf-8')
     except Exception as e:
         return {"error": f"Could not encode DOCX file: {e}"}
-
+    
     return {"result": docx_b64}
 
 if __name__ == "__main__":
