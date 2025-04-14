@@ -53,7 +53,7 @@ def write_wave(path, audio_bytes, sample_rate=16000):
 # VAD-Based Chunking Logic
 # ------------------------
 
-def vad_chunks_to_flexible_chunks(wav_path, aggressiveness=3):
+def vad_chunks_to_flexible_chunks(wav_path, aggressiveness=2):
     """
     Split the WAV audio into chunks using voice activity detection.
     
@@ -61,8 +61,8 @@ def vad_chunks_to_flexible_chunks(wav_path, aggressiveness=3):
     and then groups frames that contain speech into chunks of configurable duration.
     """
     FRAME_MS = 30     # Frame length in milliseconds (must be 10, 20, or 30 for webrtcvad)
-    MIN_SEC = 15      # Minimum chunk duration in seconds
-    MAX_SEC = 20      # Maximum chunk duration in seconds
+    MIN_SEC = 25      # Minimum chunk duration in seconds
+    MAX_SEC = 30      # Maximum chunk duration in seconds
 
     audio_bytes, sr = read_wave(wav_path)
     vad = webrtcvad.Vad(aggressiveness)
@@ -98,9 +98,9 @@ def vad_chunks_to_flexible_chunks(wav_path, aggressiveness=3):
         # or if enough speech has been accumulated and the next frame is silence (or it's the last frame)
         if sec >= MAX_SEC or (sec >= MIN_SEC and (i + 1 == len(speech_frames) or speech_frames[i + 1] is None)):
             end_time = start_time + sec
-            # Expand the chunk slightly (0.5 seconds of padding) at both sides if possible
-            start_sample = max(0, int(start_time * sr) * 2 - int(0.5 * sr) * 2)
-            end_sample = min(len(audio_bytes), int(end_time * sr) * 2 + int(0.5 * sr) * 2)
+            # Expand the chunk slightly (1.2 seconds of padding) at both sides if possible
+            start_sample = max(0, int(start_time * sr) * 2 - int(1.2 * sr) * 2)
+            end_sample = min(len(audio_bytes), int(end_time * sr) * 2 + int(1.2 * sr) * 2)
             chunk = audio_bytes[start_sample:end_sample]
             chunks.append(chunk)
             chunk_infos.append((start_time, end_time))
@@ -116,13 +116,11 @@ def vad_chunks_to_flexible_chunks(wav_path, aggressiveness=3):
     paths = []
     for i, (chunk, (start, end)) in enumerate(zip(chunks, chunk_infos)):
         path = os.path.join(tmpdir, f"vad_chunk_{i}.wav")
-        write_wave(path, chunk, sr)
-        # Uncomment the next line to print chunk information
-        # print(f"Chunk {i}: {start:.2f}s to {end:.2f}s -> {path}")
+        write_wave(path, chunk, sr)        
         paths.append(path)
     return paths
 
-def merge_transcriptions(transcriptions, overlap_words=10):
+def merge_transcriptions(transcriptions, overlap_words=15):
     """
     Merge a list of transcriptions by checking overlap between adjacent chunks.
     
