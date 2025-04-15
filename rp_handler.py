@@ -11,6 +11,7 @@ import soundfile as sf
 from transformers import WhisperProcessor, WhisperForConditionalGeneration
 from docx import Document
 import runpod
+from openai import OpenAI
 
 # Use the system temporary directory
 tmpdir = tempfile.gettempdir()
@@ -156,6 +157,14 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 model = WhisperForConditionalGeneration.from_pretrained(model_name).to(device)
 
 # ------------------------
+# OpenAI API Setup using provided template
+# ------------------------
+
+client = OpenAI()
+# Set OpenAI API key using environment variable (ensure OPENAI_API_KEY is set)
+client.api_key = os.getenv("OPENAI_API_KEY")
+
+# ------------------------
 # RunPod Handler Function
 # ------------------------
 
@@ -166,8 +175,9 @@ def handler(event):
       - converts each to a 16kHz mono WAV,
       - splits each into speech-based chunks using VAD,
       - transcribes each chunk with Whisper,
-      - merges the chunk transcriptions per audio file, and
-      - merges all audio transcriptions into a single DOCX file (with line separators between them).
+      - merges the chunk transcriptions per audio file,
+      - sends the merged transcription to an OpenAI GPT‑4.1 model to fix errors,
+      - and merges both the original and LLM-corrected texts into a single DOCX file.
     """
     job_input = event.get("input", {}) or {}
     
@@ -254,13 +264,48 @@ def handler(event):
         except Exception as e:
             return {"error": f"Transcription failed for audio file {path}: {str(e)}"}
     
-    # Merge all audio transcriptions into one document using a separator (here using two newlines and a dashed line)
+    # Merge all audio transcriptions into one document using a separator
     separator = "\n\n"
     combined_transcription = separator.join(all_transcriptions)
     
-    # Save the combined transcription to a DOCX file
+    # ------------------------
+    # Send merged transcription to GPT-4.1 to fix errors using the provided API template
+    # ------------------------
+    system_prompt = (
+        "You are ChatGPT. You fix spelling, grammar, punctuation, and formatting errors in Turkish text.\n\n"
+        "Rules:\n\n"
+        "The input is in Turkish and wrapped in double quotes (\"\").\n\n"
+        "Fix all errors but do not change the meaning.\n\n"
+        "Output must also be wrapped in double quotes (\"\").\n\n"
+        "Use Markdown **bold** for headings or names (e.g., **Heading:**).\n\n"
+        "Add a line break after every sentence.\n\n"
+        "Don't add or remove any major content.\n\n"
+        "Only output the corrected text — no explanations."
+    )
+    user_message = f'"{combined_transcription}"'
+    
+    try:
+        response = client.responses.create(
+            model="gpt-4.1",
+            input=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message}
+            ],
+            temperature=0.8
+        )
+        llm_output = response.output_text
+    except Exception as e:
+        return {"error": f"LLM processing failed: {str(e)}"}
+    
+    # ------------------------
+    # Create a DOCX file containing the merged transcription and the LLM-corrected text
+    # ------------------------
     doc = Document()
+    # Without the header paragraphs; just join the texts with a line break separator
     doc.add_paragraph(combined_transcription.strip())
+    doc.add_paragraph("\n")
+    doc.add_paragraph(llm_output.strip())
+    
     output_docx = os.path.join(tmpdir, "transcription.docx")
     doc.save(output_docx)
     
