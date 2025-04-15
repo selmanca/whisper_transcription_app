@@ -126,10 +126,13 @@ def process_audio_file(audio_file_path, processor, model, device):
 def handler(event):
     job_input = event.get("input", {}) or {}
     # Get input as either base64 or file paths (support single or list)
-    audio_b64 = job_input.get("audio_base64")
-    audio_path = job_input.get("audio")
-    if isinstance(audio_b64, str): audio_b64 = [audio_b64]
-    if isinstance(audio_path, str): audio_path = [audio_path]
+    audio_b64 = job_input.get("audio_base64") or []
+    audio_path = job_input.get("audio") or []
+    if isinstance(audio_b64, str):
+        audio_b64 = [audio_b64]
+    if isinstance(audio_path, str):
+        audio_path = [audio_path]
+
     if not (audio_b64 or audio_path):
         return {"error": "No audio input provided."}
     
