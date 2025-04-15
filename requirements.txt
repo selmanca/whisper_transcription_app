@@ -5,3 +5,4 @@ python-docx        # To generate Word (.docx) files
 soundfile          # Python bindings for libsndfile
 librosa            # Audio loading and processing
 webrtcvad          # Voice Activity Detection for smarter chunking
+openai
