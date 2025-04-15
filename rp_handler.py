@@ -7,18 +7,16 @@ import contextlib
 import webrtcvad
 import torch
 import librosa
-import soundfile as sf
 from transformers import WhisperProcessor, WhisperForConditionalGeneration
 from docx import Document
 import runpod
+import re
 from openai import OpenAI
 
 # Use the system temporary directory
 tmpdir = tempfile.gettempdir()
 
-# ------------------------
-# Audio Conversion Helpers
-# ------------------------
+# ----- Audio Processing Functions -----
 
 def convert_audio_to_wav(input_path, output_path):
     """Convert any audio file to a 16kHz mono WAV using ffmpeg."""
@@ -35,7 +33,7 @@ def convert_audio_to_wav(input_path, output_path):
 def read_wave(path):
     """Read a WAV file and return its PCM data and sample rate."""
     with contextlib.closing(wave.open(path, 'rb')) as wf:
-        # Make sure the audio file is 16kHz mono 16-bit PCM
+        # Ensure audio is 16kHz, mono, 16-bit PCM.
         assert wf.getframerate() == 16000, "Sample rate must be 16kHz"
         assert wf.getnchannels() == 1, "Audio must be mono"
         assert wf.getsampwidth() == 2, "Audio must be 16-bit"
@@ -43,43 +41,36 @@ def read_wave(path):
     return pcm_data, 16000
 
 def write_wave(path, audio_bytes, sample_rate=16000):
-    """Write PCM data to a WAV file with a given sample rate."""
+    """Write PCM data to a WAV file with given sample rate."""
     with wave.open(path, 'wb') as wf:
         wf.setnchannels(1)
         wf.setsampwidth(2)
         wf.setframerate(sample_rate)
         wf.writeframes(audio_bytes)
 
-# ------------------------
-# VAD-Based Chunking Logic
-# ------------------------
-
 def vad_chunks_to_flexible_chunks(wav_path, aggressiveness=2):
     """
     Split the WAV audio into chunks using voice activity detection.
-    
-    The function divides the audio into frames, labels each frame as speech or not,
-    and then groups frames that contain speech into chunks of configurable duration.
+    Chunks will be between MIN_SEC and MAX_SEC seconds in length.
     """
-    FRAME_MS = 30     # Frame length in milliseconds (must be 10, 20, or 30 for webrtcvad)
-    MIN_SEC = 25      # Minimum chunk duration in seconds
-    MAX_SEC = 30      # Maximum chunk duration in seconds
-
+    FRAME_MS = 30     # must be 10, 20, or 30 for webrtcvad
+    MIN_SEC = 25
+    MAX_SEC = 30
     audio_bytes, sr = read_wave(wav_path)
     vad = webrtcvad.Vad(aggressiveness)
     frame_size = int(sr * (FRAME_MS / 1000.0) * 2)  # 2 bytes per sample
     frames = [audio_bytes[i:i+frame_size] for i in range(0, len(audio_bytes), frame_size)]
-
-    # Determine if each frame contains speech
+    
+    # Detect speech frames
     speech_frames = []
     for frame in frames:
         if len(frame) < frame_size:
-            continue  # Skip incomplete frames at the end
+            continue
         if vad.is_speech(frame, sr):
             speech_frames.append(frame)
         else:
             speech_frames.append(None)
-
+    
     # Group frames into chunks
     chunks = []
     current = bytearray()
@@ -91,43 +82,35 @@ def vad_chunks_to_flexible_chunks(wav_path, aggressiveness=2):
             current.extend(f)
             sec += FRAME_MS / 1000
         elif current:
-            # Even when no speech is detected, add some silence for continuity
             current.extend(b'\x00' * frame_size)
             sec += FRAME_MS / 1000
         
-        # End the chunk if it has reached the maximum duration
-        # or if enough speech has been accumulated and the next frame is silence (or it's the last frame)
-        if sec >= MAX_SEC or (sec >= MIN_SEC and (i + 1 == len(speech_frames) or speech_frames[i + 1] is None)):
+        if sec >= MAX_SEC or (sec >= MIN_SEC and (i+1 == len(speech_frames) or speech_frames[i+1] is None)):
             end_time = start_time + sec
-            # Expand the chunk slightly (1.2 seconds of padding) at both sides if possible
             start_sample = max(0, int(start_time * sr) * 2 - int(1.2 * sr) * 2)
             end_sample = min(len(audio_bytes), int(end_time * sr) * 2 + int(1.2 * sr) * 2)
             chunk = audio_bytes[start_sample:end_sample]
             chunks.append(chunk)
             chunk_infos.append((start_time, end_time))
-            current = bytearray()  # reset buffer for next chunk
+            current.clear()
             start_time = end_time
             sec = 0
     if current:
         end_time = start_time + sec
         chunks.append(bytes(current))
         chunk_infos.append((start_time, end_time))
-
-    # Save the chunks to temporary wav files
+    
+    # Save chunks to temporary WAV files
     paths = []
     for i, (chunk, (start, end)) in enumerate(zip(chunks, chunk_infos)):
         path = os.path.join(tmpdir, f"vad_chunk_{i}.wav")
-        write_wave(path, chunk, sr)        
+        write_wave(path, chunk, sr)
+        print(f"Chunk {i}: {start:.2f}s to {end:.2f}s -> {path}")
         paths.append(path)
     return paths
 
 def merge_transcriptions(transcriptions, overlap_words=15):
-    """
-    Merge a list of transcriptions by checking overlap between adjacent chunks.
-    
-    If the last few words of one chunk match the first few words of the next,
-    they are merged to avoid duplicate content.
-    """
+    """Merge transcription strings; remove overlaps at chunk boundaries."""
     if not transcriptions:
         return ""
     merged = transcriptions[0].strip()
@@ -143,45 +126,37 @@ def merge_transcriptions(transcriptions, overlap_words=15):
         merged += " " + " ".join(c_words[max_ov:])
     return merged
 
-# ------------------------
-# Model Loading & Preparation
-# ------------------------
+def add_markdown_paragraph(doc, markdown_text):
+    """
+    Parses a Markdown string and adds it as a paragraph to the DOCX Document.
+    Text wrapped in ** is formatted in bold.
+    """
+    paragraph = doc.add_paragraph()
+    # Split text into parts based on bold markers.
+    parts = re.split(r'(\*\*.*?\*\*)', markdown_text)
+    for part in parts:
+        if part.startswith('**') and part.endswith('**'):
+            run = paragraph.add_run(part[2:-2])
+            run.bold = True
+        else:
+            paragraph.add_run(part)
 
-# Load model name from environment variable, and use a default if not provided.
-model_name = os.getenv("WHISPER_MODEL_NAME")
-# print(f"Using Whisper model: {model_name}")
-
-# Load the Whisper processor and model.
-processor = WhisperProcessor.from_pretrained(model_name)
-device = "cuda" if torch.cuda.is_available() else "cpu"
-model = WhisperForConditionalGeneration.from_pretrained(model_name).to(device)
-
-# ------------------------
-# OpenAI API Setup using provided template
-# ------------------------
-
-client = OpenAI()
-# Set OpenAI API key using environment variable (ensure OPENAI_API_KEY is set)
-client.api_key = os.getenv("OPENAI_API_KEY")
-
-# ------------------------
-# RunPod Handler Function
-# ------------------------
+# ----- RunPod Handler Function -----
 
 def handler(event):
     """
     RunPod serverless handler that:
-      - accepts one or more audio files (base64 encoded or file paths),
-      - converts each to a 16kHz mono WAV,
-      - splits each into speech-based chunks using VAD,
-      - transcribes each chunk with Whisper,
-      - merges the chunk transcriptions per audio file,
-      - sends the merged transcription to an OpenAI GPT‑4.1 model to fix errors,
-      - and merges both the original and LLM-corrected texts into a single DOCX file.
+      - Accepts one or more audio files (as base64 or file paths),
+      - Converts each to 16kHz mono WAV and splits into chunks using VAD,
+      - Transcribes each chunk via Whisper,
+      - Merges the transcriptions,
+      - Sends the merged text to OpenAI's GPT-4.1 model to fix errors,
+      - Parses the Markdown output (making headings bold) and creates a DOCX file,
+      - Returns the DOCX file as a base64‑encoded string.
     """
     job_input = event.get("input", {}) or {}
     
-    # Support both a single file or a list of files
+    # Support single or multiple files for both base64 and path
     audio_b64 = job_input.get("audio_base64")
     audio_path = job_input.get("audio")
     
@@ -200,88 +175,89 @@ def handler(event):
     
     all_transcriptions = []
     
-    # Process each audio file provided as base64.
+    # Process base64 audio files.
     for idx, audio_str in enumerate(audio_b64):
         original_audio = os.path.join(tmpdir, f"input_audio_original_{idx}")
         processed_audio = os.path.join(tmpdir, f"input_audio_processed_{idx}.wav")
         try:
-            # Remove data URL header if present
             if audio_str.startswith("data:"):
                 audio_str = audio_str.split(",", 1)[1]
             with open(original_audio, "wb") as f:
                 f.write(base64.b64decode(audio_str))
         except Exception as e:
-            return {"error": f"Invalid base64 audio data for audio index {idx}: {e}"}
-        
+            return {"error": f"Invalid base64 audio data for index {idx}: {e}"}
         try:
             convert_audio_to_wav(original_audio, processed_audio)
         except Exception as e:
-            return {"error": f"Audio conversion failed for audio index {idx}: {str(e)}"}
-        
+            return {"error": f"Audio conversion failed for index {idx}: {e}"}
         try:
-            # Perform VAD-based chunking and transcription
             chunk_paths = vad_chunks_to_flexible_chunks(processed_audio)
             transcriptions = []
             for i, chunk_path in enumerate(chunk_paths):
                 waveform, _ = librosa.load(chunk_path, sr=16000)
-                input_features = processor(
+                processor = WhisperProcessor.from_pretrained(os.getenv("WHISPER_MODEL_NAME"))
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+                model = WhisperForConditionalGeneration.from_pretrained(os.getenv("WHISPER_MODEL_NAME")).to(device)
+                input_feats = processor(
                     waveform,
                     sampling_rate=16000,
                     return_tensors="pt"
                 ).input_features.to(device)
-                predicted_ids = model.generate(input_features)
-                transcription = processor.batch_decode(predicted_ids, skip_special_tokens=True)[0]
-                transcriptions.append(transcription.strip())
+                pred_ids = model.generate(input_feats)
+                txt = processor.batch_decode(pred_ids, skip_special_tokens=True)[0]
+                transcriptions.append(txt.strip())
             final_text = merge_transcriptions(transcriptions)
             all_transcriptions.append(final_text)
         except Exception as e:
-            return {"error": f"Transcription failed for audio index {idx}: {str(e)}"}
+            return {"error": f"Transcription failed for audio index {idx}: {e}"}
     
-    # Process each audio file provided as a direct file path.
+    # Process audio files provided as direct file paths.
     for idx, path in enumerate(audio_path):
         processed_audio = os.path.join(tmpdir, f"input_audio_processed_path_{idx}.wav")
         try:
             convert_audio_to_wav(path, processed_audio)
         except Exception as e:
-            return {"error": f"Audio conversion failed for audio file {path}: {str(e)}"}
-        
+            return {"error": f"Audio conversion failed for file {path}: {e}"}
         try:
-            # Perform VAD-based chunking and transcription
             chunk_paths = vad_chunks_to_flexible_chunks(processed_audio)
             transcriptions = []
             for i, chunk_path in enumerate(chunk_paths):
                 waveform, _ = librosa.load(chunk_path, sr=16000)
-                input_features = processor(
+                processor = WhisperProcessor.from_pretrained(os.getenv("WHISPER_MODEL_NAME"))
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+                model = WhisperForConditionalGeneration.from_pretrained(os.getenv("WHISPER_MODEL_NAME")).to(device)
+                input_feats = processor(
                     waveform,
                     sampling_rate=16000,
                     return_tensors="pt"
                 ).input_features.to(device)
-                predicted_ids = model.generate(input_features)
-                transcription = processor.batch_decode(predicted_ids, skip_special_tokens=True)[0]
-                transcriptions.append(transcription.strip())
+                pred_ids = model.generate(input_feats)
+                txt = processor.batch_decode(pred_ids, skip_special_tokens=True)[0]
+                transcriptions.append(txt.strip())
             final_text = merge_transcriptions(transcriptions)
             all_transcriptions.append(final_text)
         except Exception as e:
-            return {"error": f"Transcription failed for audio file {path}: {str(e)}"}
+            return {"error": f"Transcription failed for file {path}: {e}"}
     
-    # Merge all audio transcriptions into one document using a separator
+    # Merge all transcriptions from all files.
     separator = "\n\n"
     combined_transcription = separator.join(all_transcriptions)
     
-    # ------------------------
-    # Send merged transcription to GPT-4.1 to fix errors using the provided API template
-    # ------------------------
+    # ----- LLM Processing -----
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        return {"error": "OPENAI_API_KEY environment variable must be set."}
+    client = OpenAI(api_key=api_key)
     system_prompt = (
-        "You are ChatGPT. You fix spelling, grammar, punctuation, and formatting errors in Turkish text.\n\n"
-        "Rules:\n\n"
-        "The input is in Turkish and wrapped in double quotes (\"\").\n\n"
-        "Fix all errors but do not change the meaning.\n\n"
-        "Output must also be wrapped in double quotes (\"\").\n\n"
-        "Use Markdown **bold** for headings or names (e.g., **Heading:**).\n\n"
-        "Add a line break after every sentence.\n\n"
-        "Don't add or remove any major content.\n\n"
+        "You are ChatGPT. You fix spelling, grammar, punctuation, and formatting errors in Turkish text in radiology report setting.\n"
+        "Rules:\n"
+        "Fix all errors but do not change the meaning.\n"
+        "Use Markdown **bold** for headings or names (e.g., **Heading:**).\n"
+        "Add a line break after every sentence.\n"
+        "Don't add or remove any major content.\n"
         "Only output the corrected text — no explanations."
     )
+    # Wrap the merged text in double quotes as required.
     user_message = f'"{combined_transcription}"'
     
     try:
@@ -295,24 +271,20 @@ def handler(event):
         )
         llm_output = response.output_text
     except Exception as e:
-        return {"error": f"LLM processing failed: {str(e)}"}
+        return {"error": f"LLM processing failed: {e}"}
     
-    # ------------------------
-    # Create a DOCX file containing the merged transcription and the LLM-corrected text
-    # ------------------------
+    # ----- Create DOCX File -----
+    # Create a DOCX file containing the LLM-corrected text,
+    # parsing the Markdown to ensure headings/names are bold.
     doc = Document()
-    # Without the header paragraphs; just join the texts with a line break separator
-    doc.add_paragraph(combined_transcription.strip())
-    doc.add_paragraph("\n")
-    doc.add_paragraph(llm_output.strip())
-    
+    add_markdown_paragraph(doc, llm_output.strip())
     output_docx = os.path.join(tmpdir, "transcription.docx")
     doc.save(output_docx)
     
-    # Encode DOCX file as base64 for the response
+    # Encode the DOCX file as base64 for the response.
     try:
         with open(output_docx, "rb") as f:
-            docx_b64 = base64.b64encode(f.read()).decode('utf-8')
+            docx_b64 = base64.b64encode(f.read()).decode("utf-8")
     except Exception as e:
         return {"error": f"Could not encode DOCX file: {e}"}
     
