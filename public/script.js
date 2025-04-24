@@ -142,7 +142,6 @@ async function fetchStatus() {
       workersMax > 0 ? `🟢 Çalışan cihaz sayısı ${workersMax}`
       : '🔴 Cihazlar kapalı';
     // reflect status in controls
-    countInput.value = workersMax;
     applyBtn.disabled = workersMax > 0;  // already running → can’t “start” again
     stopBtn.disabled  = workersMax === 0;    
   }
