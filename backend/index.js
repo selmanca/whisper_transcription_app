@@ -138,24 +138,29 @@ app.post('/stop-workers', async (_, res) => {
 
 app.get('/workers-status', async (req, res) => {
   const query = `
-    query GetEndpoint($id: ID!) {
-      endpoint(id: $id) { id, minWorkers, maxWorkers }
+    query Endpoints {
+      myself {
+        endpoints {
+          id
+          workersMax
+        }
+      }
     }
   `;
   try {
-    const resp = await fetch(
-      `https://api.runpod.io/graphql?api_key=${API_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, variables: { id: ENDPOINT_ID } })
-      }
-    );
+    const resp = await fetch(`https://api.runpod.io/graphql?api_key=${API_KEY}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query })
+    });
     const { data, errors } = await resp.json();
     if (errors) return res.status(500).json({ errors });
-    res.json(data.endpoint);
+    const ep = data.myself.endpoints.find(e => e.id === ENDPOINT_ID);
+    if (!ep) return res.status(404).json({ error: 'Endpoint not found' });
+    // Return workersMax so the client knows if >0 (active) or =0 (stopped)
+    return res.json({ workersMax: ep.workersMax });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 
