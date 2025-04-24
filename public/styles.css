@@ -94,9 +94,14 @@ h1 {
 /* ---------- Spinner ---------- */
 
 .spinner{
-  width:18px;height:18px;margin-left:8px;
-  border:3px solid transparent;          /* hide sides */
-  border-top:3px solid #007bff;          /* visible part */
+  display:inline-block;
+  width:1.25em;           /* ~20 px next to 1 rem text */
+  height:1.25em;
+  margin-left:.6em;
+  vertical-align:middle;
+
+  border:.18em solid rgba(0,123,255,.25);  /* faint ring */
+  border-top-color:#007bff;                /* coloured segment */
   border-radius:50%;
   animation:spin .8s linear infinite;
 }
