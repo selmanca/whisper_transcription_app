@@ -21,21 +21,28 @@ const API_KEY = process.env.API_KEY;
 // 1) Security headers
 app.use(helmet());
 
-// 2) Rate‑limit ALL requests to 100 per 15min (adjust as you like)
-const globalLimiter = rateLimit({
+// // 2) Rate-limit “entrance” only to prevent brute-force
+const entranceLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100,
+  max: 10,                  // allow only 10 attempts per IP
   standardHeaders: true,
   legacyHeaders: false
 });
-app.use(globalLimiter);
 
-// 3) Basic‑Auth on EVERYTHING
-app.use(basicAuth({
+// 3) Basic-Auth for entrance only ───────────────────────────────
+const auth = basicAuth({
   users: { [process.env.AUTH_USER]: process.env.AUTH_PASS },
-  challenge: true,               // sends WWW-Authenticate header
+  challenge: true,
   unauthorizedResponse: req => '🛑 Access denied'
-}));
+});
+
+// Protect and rate-limit only the “entrance” (root + static files)
+app.use(
+   '/', 
+   entranceLimiter, 
+   auth, 
+   express.static(path.join(__dirname, '../public'))
+ );
 
 app.use(cors());
 app.use(bodyParser.json({ limit: '50mb' }));
