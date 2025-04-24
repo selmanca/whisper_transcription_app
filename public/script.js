@@ -10,6 +10,9 @@ const STATUS_URL = `${API_BASE}/status/`;
 const fileInput = document.getElementById('file-input');
 const uploadSection = document.getElementById('upload-section');
 const outputDiv = document.getElementById('output');
+const applyBtn   = document.getElementById('apply-workers');
+const stopBtn    = document.getElementById('stop-workers');
+const countInput = document.getElementById('worker-count');
 
 function createFileEntry(filename) {
   const entry = document.createElement('div');
@@ -22,14 +25,21 @@ function createFileEntry(filename) {
 function updateStatus(entryElem, text, showSpinner = false) {
   const statusElem = entryElem.querySelector('.status');
   if (statusElem) {
-    statusElem.innerHTML = ` - ${text}`;
-    if (showSpinner) {
-      const spinner = document.createElement('span');
-      spinner.className = 'spinner';
-      statusElem.appendChild(spinner);
+    // clear then (re)insert text
+    statusElem.textContent = ` - ${text}`;
+
+    // add or remove spinner
+    let spin = statusElem.querySelector('.spinner');
+    if (showSpinner && !spin){
+      spin = document.createElement('span');
+      spin.className = 'spinner';
+      statusElem.appendChild(spin);
     }
-  }
-}
+    if (!showSpinner && spin){
+      spin.remove();
+    }
+   }
+ }
 
 async function handleFiles(files) {
   // Collect base64 strings and file names
@@ -105,32 +115,36 @@ async function handleFiles(files) {
 }
 
 async function control(n) {
-    const url = n === 0 ? '/stop-workers' : '/update-workers';
-    const opts = {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: n === 0 ? undefined : JSON.stringify({ max: n })
-    };
-    const r = await fetch(url, opts);
-    await r.json();
-  }
+  const url  = n === 0 ? '/stop-workers' : '/update-workers';
+  const opts = {
+    method : 'POST',
+    headers: { 'Content-Type':'application/json' },
+    body   : n === 0 ? undefined : JSON.stringify({ max:n })
+  };
+  applyBtn.disabled = true;   // prevent double-click during request
+  stopBtn.disabled  = true;
+  await fetch(url, opts);     // ignore body; fetchStatus will refresh UI
+}
 
-  document.getElementById('apply-workers')
+  applyBtn
     .addEventListener('click', () => control(
       parseInt(document.getElementById('worker-count').value, 10)
     ));
 
-  document.getElementById('stop-workers')
+  stopBtn
     .addEventListener('click', () => control(0));
 	
 async function fetchStatus() {
     const r = await fetch('/workers-status');
     if (!r.ok) return document.getElementById('worker-status').textContent = 'Hata';
     const { workersMax } = await r.json();          // ← use the right field
-    const txt = workersMax > 0
-      ? `🟢 Çalışan cihaz sayısı ${workersMax}`
+    document.getElementById('worker-status').textContent =
+      workersMax > 0 ? `🟢 Çalışan cihaz sayısı ${workersMax}`
       : '🔴 Cihazlar kapalı';
-    document.getElementById('worker-status').textContent = txt;
+    // reflect status in controls
+    countInput.value = workersMax;
+    applyBtn.disabled = workersMax > 0;  // already running → can’t “start” again
+    stopBtn.disabled  = workersMax === 0;    
   }
 
   // Refresh on load
