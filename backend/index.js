@@ -50,9 +50,8 @@ app.use(cors());
 app.use(bodyParser.json({ limit: '50mb' }));
 
 // Serve static files from public/
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-app.use(express.static(path.join(__dirname, '../public')));
+
+// app.use(express.static(path.join(__dirname, '../public')));
 
 // Transcription request handler
 app.post('/transcribe', async (req, res) => {
