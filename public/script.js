@@ -37,8 +37,8 @@ async function handleFiles(files) {
   let fileNames = [];
   
   // Optionally, clear any previous output or show a merged progress entry
-  const entry = createFileEntry("Merged Transcript (" + files.length + " files)");
-  updateStatus(entry, "Uploading...", true);
+  const entry = createFileEntry("Birleştirilen (" + files.length + " ses dosyası)");
+  updateStatus(entry, "Yükleniyor...", true);
 
   // Loop through each file to get its base64 representation
   for (const file of files) {
@@ -67,7 +67,7 @@ async function handleFiles(files) {
     if (!response.ok) throw new Error(`Upload failed: ${response.status}`);
     const result = await response.json();
     const jobId = result.id;
-    updateStatus(entry, "Processing...", true);
+    updateStatus(entry, "İşliyor...", true);
 
     let statusResponse, statusData;
     const pollInterval = 2000;
@@ -89,18 +89,18 @@ async function handleFiles(files) {
     // Create a download link for the merged DOCX file
     const downloadLink = document.createElement('a');
     downloadLink.className = 'download-link';
-    downloadLink.textContent = "Download Merged Transcript";
+    downloadLink.textContent = "Word dosyasını indir";
     // Using a generic file name for the merged output
     downloadLink.href =
       "data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64," +
       docxBase64;
-    downloadLink.download = "merged_transcript.docx";
+    downloadLink.download = "Rapor.docx";
 
-    updateStatus(entry, "Completed");
+    updateStatus(entry, "Tamamlandı");
     entry.appendChild(downloadLink);
   } catch (err) {
     console.error(err);
-    updateStatus(entry, "Failed");
+    updateStatus(entry, "Başarısız");
   }
 }
 
@@ -125,11 +125,11 @@ async function control(n) {
 	
 async function fetchStatus() {
     const r = await fetch('/workers-status');
-    if (!r.ok) return document.getElementById('worker-status').textContent = 'Status error';
+    if (!r.ok) return document.getElementById('worker-status').textContent = 'Hata';
     const { workersMax } = await r.json();          // ← use the right field
     const txt = workersMax > 0
-      ? `🟢 Active workers: ${workersMax}`
-      : '🔴 No active workers';
+      ? `🟢 Çalışan cihaz sayısı ${workersMax}`
+      : '🔴 Cihazlar kapalı';
     document.getElementById('worker-status').textContent = txt;
   }
 
