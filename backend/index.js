@@ -110,56 +110,45 @@ app.get('/status/:id', async (req, res) => {
 app.post('/update-workers', async (req, res) => {
   const { max } = req.body;
   try {
-    // 1) Fetch current endpoint config
+    // 1) Pull current endpoint meta
     const query = `
       query Endpoints {
         myself {
-          endpoints {
-            id
-            gpuIds
-            name
-            templateId
-            workersMin
-          }
+          endpoints { id gpuIds name templateId }
         }
-      }
-    `;
+      }`;
     const qRes = await fetch(`https://api.runpod.io/graphql?api_key=${API_KEY}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query })
     });
-    const { data, errors: qErr } = await qRes.json();
-    if (qErr) return res.status(500).json({ error: qErr });
+    const { data } = await qRes.json();
     const ep = data.myself.endpoints.find(e => e.id === ENDPOINT_ID);
     if (!ep) return res.status(404).json({ error: 'Endpoint not found' });
 
-    // 2) Mutate with saveEndpoint (requires gpuIds, name, templateId) :contentReference[oaicite:1]{index=1}
-    // 2) Simplified saveEndpoint (only change workersMax) :contentReference[oaicite:1]{index=1}
+    // 2) Build *literal* mutation string (no variables!)
     const mutation = `
-      mutation Save($input: SaveEndpointInput!) {
-        saveEndpoint(input: $input) {
+      mutation {
+        saveEndpoint(input: {
+          id: "${ENDPOINT_ID}",
+          gpuIds: "${ep.gpuIds}",
+          name: "${ep.name.replace(/"/g, '\\"')}",
+          templateId: "${ep.templateId}",
+          workersMax: ${max}
+        }) {
           id
           workersMax
         }
-      }
-    `;
-    const vars = { input: {
-      id:          ENDPOINT_ID,
-      gpuIds:      ep.gpuIds,
-      name:        ep.name,
-      templateId:  ep.templateId,
-      workersMax:  max
-    }};
+      }`;
+
     const mRes = await fetch(`https://api.runpod.io/graphql?api_key=${API_KEY}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: mutation, variables: vars })
+      body: JSON.stringify({ query: mutation })
     });
     const mJson = await mRes.json();
-    if (mJson.errors) return res.status(500).json({ error: mJson.errors });
+    if (mJson.errors) return res.status(500).json(mJson);
     return res.json(mJson.data.saveEndpoint);
-
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
