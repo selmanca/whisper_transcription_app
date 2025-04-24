@@ -112,8 +112,7 @@ async function control(n) {
       body: n === 0 ? undefined : JSON.stringify({ max: n })
     };
     const r = await fetch(url, opts);
-    const j = await r.json();
-    document.getElementById('worker-log').textContent = JSON.stringify(j, null, 2);
+    await r.json();
   }
 
   document.getElementById('apply-workers')
