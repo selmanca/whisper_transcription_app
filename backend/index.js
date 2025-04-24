@@ -74,12 +74,12 @@ const auth = basicAuth({
 });
 
 // Protect and rate-limit only the “entrance” (root + static files)
-app.use(
-   '/', 
-   entranceLimiter, 
-   auth, 
-   express.static(path.join(__dirname, '../public'))
- );
+// a) protect GET /
+app.get('/', entranceLimiter, auth,
+        (_, res) => res.sendFile(path.join(__dirname, '../public/index.html')));
+
+// b) protect static assets (no rate-limit)
+app.use(auth, express.static(path.join(__dirname, '../public')));
 
 app.use(cors());
 app.use(bodyParser.json({ limit: '50mb' }));
