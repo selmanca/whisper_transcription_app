@@ -135,11 +135,11 @@ app.post('/update-workers', async (req, res) => {
     if (!ep) return res.status(404).json({ error: 'Endpoint not found' });
 
     // 2) Mutate with saveEndpoint (requires gpuIds, name, templateId) :contentReference[oaicite:1]{index=1}
+    // 2) Simplified saveEndpoint (only change workersMax) :contentReference[oaicite:1]{index=1}
     const mutation = `
       mutation Save($input: SaveEndpointInput!) {
         saveEndpoint(input: $input) {
           id
-          workersMin
           workersMax
         }
       }
@@ -149,7 +149,6 @@ app.post('/update-workers', async (req, res) => {
       gpuIds:      ep.gpuIds,
       name:        ep.name,
       templateId:  ep.templateId,
-      workersMin:  ep.workersMin,
       workersMax:  max
     }};
     const mRes = await fetch(`https://api.runpod.io/graphql?api_key=${API_KEY}`, {
