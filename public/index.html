@@ -4,190 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Whisper Transcription</title>
-  <style>
-    * {
-      box-sizing: border-box;
-    }
 
-    body {
-      font-family: 'Segoe UI', sans-serif;
-      margin: 0;
-      padding: 2em 1em;
-      background: url('images/pattern.png');
-      background-repeat: repeat;
-      background-size: auto; /* Avoid stretch */
-      background-position: center;
-      background-color: #f0f2f5;
-      color: #333;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-    }
-
-    h1 {
-      margin: 0.5em 0 1em;
-      font-size: 2rem;
-      text-align: center;
-    }
-
-    .icon {
-      width: 150px;
-      height: auto;
-      margin-bottom: 0.8em;
-    }
-
-    #upload-section {
-      border: 2px dashed #aaa;
-      border-radius: 16px;
-      background-color: white;
-      width: 100%;
-      max-width: 600px;
-      padding: 2em;
-      text-align: center;
-      transition: background-color 0.3s ease;
-      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
-      position: relative;
-    }
-
-    #upload-section.dragover {
-      background-color: #e9f7ff;
-    }
-
-    .drag-icon {
-      font-size: 3rem;
-      color: #007bff;
-      margin-bottom: 0.5em;
-    }
-
-    #file-input {
-      display: none;
-    }
-
-    #file-label {
-      display: inline-block;
-      margin-top: 1em;
-      padding: 0.7em 1.5em;
-      font-size: 1rem;
-      color: white;
-      background-color: #007bff;
-      border-radius: 6px;
-      cursor: pointer;
-      transition: background-color 0.2s ease;
-    }
-
-    #file-label:hover {
-      background-color: #0056b3;
-    }
-
-    #output {
-      margin-top: 2em;
-      width: 100%;
-      max-width: 600px;
-    }
-
-    .file-entry {
-      background-color: #fff;
-      border-left: 4px solid #007bff;
-      border-radius: 8px;
-      padding: 1em;
-      margin-bottom: 1em;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-size: 0.95rem;
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
-    }
-
-    .file-info {
-      display: flex;
-      flex-direction: column;
-    }
-
-    .file-name {
-      font-weight: bold;
-    }
-
-    .status {
-      margin-top: 0.3em;
-      font-style: italic;
-      color: #666;
-    }
-
-    .download-link {
-      display: inline-flex;
-      align-items: center;
-      background-color: #28a745;
-      color: white;
-      padding: 0.4em 0.8em;
-      border-radius: 6px;
-      text-decoration: none;
-      font-size: 0.85rem;
-      transition: background-color 0.2s ease;
-    }
-
-    .download-link:hover {
-      background-color: #218838;
-    }
-
-    .download-icon {
-      margin-right: 0.4em;
-      width: 16px;
-      height: 16px;
-    }
-	
-	/* Spinner animation */
-    .spinner {
-        width: 18px;
-        height: 18px;
-        border: 3px solid #ccc;
-        border-top: 3px solid #007bff;
-        border-radius: 50%;
-        animation: spin 1s linear infinite;
-        display: inline-block;
-        vertical-align: middle;
-        margin-left: 8px;
-      }
-
-    @keyframes spin {
-        to {
-          transform: rotate(360deg);
-        }
-      }
-
-    /* Upload animation */
-    .file-entry {
-        opacity: 0;
-        transform: translateY(10px);
-        animation: fadeInUp 0.4s ease-out forwards;
-      }
-
-    @keyframes fadeInUp {
-        to {
-          opacity: 1;
-          transform: translateY(0);
-        }
-       }
-
-    @media (max-width: 600px) {
-      h1 {
-        font-size: 1.5rem;
-      }
-
-      #upload-section {
-        padding: 1.5em;
-      }
-
-      .file-entry {
-        flex-direction: column;
-        align-items: flex-start;
-      }
-
-      .download-link {
-        margin-top: 0.5em;
-      }
-
-    }
-  </style>
+  <!-- NEW external stylesheet -->
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <img src="images/mic.png" alt="Microphone icon" class="icon" />
@@ -201,19 +20,21 @@
   </div>
 
   <div id="output"></div>
-  
-  <div id="worker-controls" style="margin:2em 0; text-align:center;">
-  <label>
-    Çalışan Cihaz Sayısı:
-    <input id="worker-count" type="number" min="1" value="2" style="width:4ch">
-  </label>
-  <button id="apply-workers">Çalıştır</button>
-  <button id="stop-workers">Durdur</button>
-  <pre id="worker-log" style="margin-top:1em; font-size:.85rem;"></pre>
-  </div>
-  <div id="worker-status" style="margin-bottom:1em; font-weight:bold;">
-  Loading worker status…
-  </div>
+
+  <!-- modernised worker controls -->
+  <section id="worker-controls">
+    <label class="field">
+      <span class="field-label">Çalışan Cihaz Sayısı</span>
+      <input id="worker-count" type="number" min="1" max="5" value="2">
+    </label>
+
+    <button id="apply-workers" class="btn primary">Çalıştır</button>
+    <button id="stop-workers"  class="btn danger">Durdur</button>
+
+    <pre id="worker-log"></pre>
+  </section>
+
+  <div id="worker-status" class="status-badge">Loading worker status…</div>
 
   <script src="script.js"></script>
 </body>
