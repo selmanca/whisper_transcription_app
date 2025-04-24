@@ -154,11 +154,10 @@ app.post('/update-workers', async (req, res) => {
   }
 });
 
-// Shortcut to set maxWorkers = 0
-app.post('/stop-workers', async (_, res) => {
-  // just call update-workers with max=0
-  req = { body: { max: 0 } };
-  return app._router.handle(req, res, () => {});
+// ─── Stop all workers (max = 0) ──────────────────────────────────────────────
+app.post('/stop-workers', async (_req, res) => {
+  try { return res.json(await saveWorkersMax(0)); }
+  catch (err) { return res.status(500).json({ error: err.message }); }
 });
 
 app.get('/workers-status', async (req, res) => {
