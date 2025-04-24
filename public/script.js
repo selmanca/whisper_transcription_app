@@ -127,9 +127,9 @@ async function control(n) {
 async function fetchStatus() {
     const r = await fetch('/workers-status');
     if (!r.ok) return document.getElementById('worker-status').textContent = 'Status error';
-    const { minWorkers, maxWorkers } = await r.json();
-    const txt = maxWorkers > 0
-      ? `🟢 Active workers: ${maxWorkers}`
+    const { workersMax } = await r.json();          // ← use the right field
+    const txt = workersMax > 0
+      ? `🟢 Active workers: ${workersMax}`
       : '🔴 No active workers';
     document.getElementById('worker-status').textContent = txt;
   }
