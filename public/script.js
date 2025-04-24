@@ -104,6 +104,47 @@ async function handleFiles(files) {
   }
 }
 
+async function control(n) {
+    const url = n === 0 ? '/stop-workers' : '/update-workers';
+    const opts = {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: n === 0 ? undefined : JSON.stringify({ max: n })
+    };
+    const r = await fetch(url, opts);
+    const j = await r.json();
+    document.getElementById('worker-log').textContent = JSON.stringify(j, null, 2);
+  }
+
+  document.getElementById('apply-workers')
+    .addEventListener('click', () => control(
+      parseInt(document.getElementById('worker-count').value, 10)
+    ));
+
+  document.getElementById('stop-workers')
+    .addEventListener('click', () => control(0));
+	
+async function fetchStatus() {
+    const r = await fetch('/workers-status');
+    if (!r.ok) return document.getElementById('worker-status').textContent = 'Status error';
+    const { minWorkers, maxWorkers } = await r.json();
+    const txt = maxWorkers > 0
+      ? `🟢 Active workers: ${maxWorkers}`
+      : '🔴 No active workers';
+    document.getElementById('worker-status').textContent = txt;
+  }
+
+  // Refresh on load
+  window.addEventListener('DOMContentLoaded', fetchStatus);
+
+  // Also refresh right after you change workers
+  const origControl = control;
+  control = async n => {
+    await origControl(n);
+    fetchStatus();
+  };
+
+
 uploadSection.addEventListener('dragover', (e) => {
   e.preventDefault();
   uploadSection.classList.add('dragover');
