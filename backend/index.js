@@ -21,14 +21,14 @@ const API_KEY = process.env.API_KEY;
 // 1) Security headers
 app.use(helmet());
 
-// 2) only count failed auth attempts
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,  // 15 minutes
-  max: 5,                   // allow up to 5 bad attempts
+// 2) Rate‑limit ALL requests to 100 per 15min (adjust as you like)
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100,
   standardHeaders: true,
-  legacyHeaders: false,
-  skipSuccessfulRequests: true  // do NOT count 2xx responses
+  legacyHeaders: false
 });
+app.use(globalLimiter);
 
 // 3) Basic‑Auth on EVERYTHING
 app.use(basicAuth({
@@ -96,6 +96,59 @@ app.get('/status/:id', async (req, res) => {
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
+});
+
+// Update maxWorkers to any value
+app.post('/update-workers', async (req, res) => {
+  const { max } = req.body;
+  const mutation = `
+    mutation UpdateWorkers($id: ID!, $min: Int!, $max: Int!) {
+      updateEndpoint(input: { id: $id, minWorkers: 0, maxWorkers: $max }) {
+        endpoint { id, minWorkers, maxWorkers }
+      }
+    }
+  `;
+  try {
+    const rp = await fetch(`https://api.runpod.io/graphql?api_key=${API_KEY}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: mutation, variables: { id: ENDPOINT_ID, max } })
+    });
+    const result = await rp.json();
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Shortcut to set maxWorkers = 0
+app.post('/stop-workers', async (_, res) => {
+  // just call update-workers with max=0
+  req = { body: { max: 0 } };
+  return app._router.handle(req, res, () => {});
+});
+
+app.get('/workers-status', async (req, res) => {
+  const query = `
+    query GetEndpoint($id: ID!) {
+      endpoint(id: $id) { id, minWorkers, maxWorkers }
+    }
+  `;
+  try {
+    const resp = await fetch(
+      `https://api.runpod.io/graphql?api_key=${API_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, variables: { id: ENDPOINT_ID } })
+      }
+    );
+    const { data, errors } = await resp.json();
+    if (errors) return res.status(500).json({ errors });
+    res.json(data.endpoint);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Start the server
