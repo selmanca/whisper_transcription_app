@@ -20,6 +20,41 @@ const __dirname  = path.dirname(__filename);
 const ENDPOINT_ID = process.env.ENDPOINT_ID;
 const API_KEY = process.env.API_KEY;
 
+// Helper: set workersMax and return RunPod reply
+async function saveWorkersMax(max) {
+  // 1) current endpoint meta
+  const metaQ = `query { myself { endpoints { id gpuIds name templateId } } }`;
+  const metaR = await fetch(`https://api.runpod.io/graphql?api_key=${API_KEY}`, {
+    method : 'POST',
+    headers: { 'Content-Type':'application/json' },
+    body   : JSON.stringify({ query: metaQ })
+  });
+  const { data } = await metaR.json();
+  const ep = data.myself.endpoints.find(e => e.id === ENDPOINT_ID);
+  if (!ep) throw new Error('Endpoint not found');
+
+  // 2) literal saveEndpoint mutation
+  const mut = `
+    mutation {
+      saveEndpoint(input:{
+        id:"${ENDPOINT_ID}",
+        gpuIds:"${ep.gpuIds}",
+        name:"${ep.name.replace(/"/g,'\\"')}",
+        templateId:"${ep.templateId}",
+        workersMax:${max}
+      }){ id workersMax }
+    }`;
+  const mutR = await fetch(`https://api.runpod.io/graphql?api_key=${API_KEY}`, {
+    method : 'POST',
+    headers: { 'Content-Type':'application/json' },
+    body   : JSON.stringify({ query: mut })
+  });
+  const mutJ = await mutR.json();
+  if (mutJ.errors) throw new Error(JSON.stringify(mutJ.errors));
+  return mutJ.data.saveEndpoint;
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 // 1) Security headers
 app.use(helmet());
 
@@ -106,52 +141,9 @@ app.get('/status/:id', async (req, res) => {
     }
 });
 
-// Update maxWorkers to any value
 app.post('/update-workers', async (req, res) => {
-  const { max } = req.body;
-  try {
-    // 1) Pull current endpoint meta
-    const query = `
-      query Endpoints {
-        myself {
-          endpoints { id gpuIds name templateId }
-        }
-      }`;
-    const qRes = await fetch(`https://api.runpod.io/graphql?api_key=${API_KEY}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query })
-    });
-    const { data } = await qRes.json();
-    const ep = data.myself.endpoints.find(e => e.id === ENDPOINT_ID);
-    if (!ep) return res.status(404).json({ error: 'Endpoint not found' });
-
-    // 2) Build *literal* mutation string (no variables!)
-    const mutation = `
-      mutation {
-        saveEndpoint(input: {
-          id: "${ENDPOINT_ID}",
-          gpuIds: "${ep.gpuIds}",
-          name: "${ep.name.replace(/"/g, '\\"')}",
-          templateId: "${ep.templateId}",
-          workersMax: ${max}
-        }) {
-          id
-          workersMax
-        }
-      }`;
-
-    const mRes = await fetch(`https://api.runpod.io/graphql?api_key=${API_KEY}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: mutation })
-    });
-    const mJson = await mRes.json();
-    if (mJson.errors) return res.status(500).json(mJson);
-    return res.json(mJson.data.saveEndpoint);
-  } catch (err) {
-    return res.status(500).json({ error: err.message });
-  }
+  try { return res.json(await saveWorkersMax(req.body.max)); }
+  catch (err) { return res.status(500).json({ error: err.message }); }
 });
 
 // ─── Stop all workers (max = 0) ──────────────────────────────────────────────
