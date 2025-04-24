@@ -201,6 +201,19 @@
   </div>
 
   <div id="output"></div>
+  
+  <div id="worker-controls" style="margin:2em 0; text-align:center;">
+  <label>
+    Çalışan Cihaz Sayısı:
+    <input id="worker-count" type="number" min="1" value="2" style="width:4ch">
+  </label>
+  <button id="apply-workers">Çalıştır</button>
+  <button id="stop-workers">Durdur</button>
+  <pre id="worker-log" style="margin-top:1em; font-size:.85rem;"></pre>
+  </div>
+  <div id="worker-status" style="margin-bottom:1em; font-weight:bold;">
+  Loading worker status…
+  </div>
 
   <script src="script.js"></script>
 </body>
