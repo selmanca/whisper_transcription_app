@@ -97,7 +97,7 @@ app.post('/transcribe', async (req, res) => {
     }
 
     try {
-        const response = await fetch(`https://api.runpod.ai/v2/${ENDPOINT_ID}/run`, {
+        const response = await fetch(`https://api.runpod.ai/v2/${ENDPOINT_ID}/runsync`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
