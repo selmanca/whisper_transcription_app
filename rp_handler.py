@@ -184,7 +184,7 @@ def handler(event):
     user_message = f'"{combined_transcription}"'
     try:
         response = client.responses.create(
-            model="gpt-5",
+            model="gpt-4.1-2025-04-14",
             input=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_message}
@@ -210,4 +210,5 @@ def handler(event):
 
 if __name__ == "__main__":
     runpod.serverless.start({"handler": handler})
+
 
