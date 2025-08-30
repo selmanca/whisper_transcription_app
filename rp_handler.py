@@ -184,12 +184,11 @@ def handler(event):
     user_message = f'"{combined_transcription}"'
     try:
         response = client.responses.create(
-            model="gpt-4.1-2025-04-14",
-            input=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_message}
-            ],
-            temperature=0.8
+            model="gpt-5",
+            instructions=system_prompt,             
+            input=user_message,           
+            text={"verbosity": "low"},              
+            reasoning={"effort": "minimal"}        
         )
         llm_output = response.output_text
     except Exception as e:
@@ -210,5 +209,6 @@ def handler(event):
 
 if __name__ == "__main__":
     runpod.serverless.start({"handler": handler})
+
 
 
