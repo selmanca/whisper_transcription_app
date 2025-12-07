@@ -1,5 +1,6 @@
 # Dockerfile
 # Start from an official Python slim image
+ENV PYTHONUNBUFFERED=1
 FROM python:3.10-slim
 
 # Install system dependencies: ffmpeg for audio decoding, libsndfile1 for pysoundfile, and git if you ever pull models directly
